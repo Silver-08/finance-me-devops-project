@@ -1,0 +1,43 @@
+---
+- name: Configure CI & Monitoring servers
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      apt: update_cache=yes
+
+    - name: Install common packages
+      apt:
+        name: [git, curl, software-properties-common]
+        state: present
+
+- name: Setup CI Server (Jenkins & Docker)
+  hosts: ci-server
+  become: yes
+  tasks:
+    - apt: name=openjdk-17-jdk state=present
+    - apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+        state: present
+    - apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+    - apt: name=docker-ce state=present update_cache=yes
+    - systemd:
+        name: docker state=started enabled=yes
+    - user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+- name: Setup Monitoring Server (Prometheus & Grafana)
+  hosts: monitoring-server
+  become: yes
+  tasks:
+    - apt: name=prometheus state=present
+    - apt: name=grafana state=present
+    - systemd:
+        name: prometheus state=started enabled=yes
+    - systemd:
+        name: grafana-server state=started enabled=yes

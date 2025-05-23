@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+
+    environment {
+        GIT_REPO       = 'https://github.com/StarAgileDevOpsTraining/star-agile-banking-finance.git'
+        DOCKERHUB_CRED = 'dockerhub-credentials'
+        DOCKERHUB_USER = 'silvy08'
+        IMAGE_NAME     = 'finance-me-app'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git url: "${GIT_REPO}", branch: 'main'
+            }
+        }
+
+        stage('Build with Maven') {
+            steps {
+                sh './mvnw clean package -DskipTests'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    dockerImage = docker.build("${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}")
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    sh 'echo $PASS | docker login -u $USER --password-stdin'
+                    sh "docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
+                }
+            }
+        }
+
+        stage('Provision Infra with Terraform') {
+            steps {
+                dir('terraform') {
+                    sh 'terraform init'
+                    sh 'terraform apply -auto-approve'
+                }
+            }
+        }
+
+        stage('Configure Servers with Ansible') {
+            steps {
+                ansiblePlaybook credentialsId: 'aws-ssh-key', inventory: 'ansible/inventory', playbook: 'ansible/playbook.yml'
+            }
+        }
+
+        stage('Deploy App') {
+            steps {
+                sh """
+                  ssh -i ~/.ssh/your-key.pem ec2-user@${env.TEST_SERVER_IP} \\
+                    "docker pull ${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER} && \\
+                     docker rm -f finance-me || true && \\
+                     docker run -d --name finance-me -p 8080:8080 ${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
+                """
+            }
+        }
+    }
+
+    post {
+        always { cleanWs() }
+    }
+}
