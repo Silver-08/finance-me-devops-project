@@ -1,0 +1,10 @@
+# Terraform state and backup files
+terraform.tfstate
+terraform.tfstate.backup
+
+# Terraform CLI cache
+.terraform/
+
+# Terraform lock file (optional to exclude if you're working solo)
+.terraform.lock.hcl
+

@@ -2,70 +2,53 @@ pipeline {
     agent any
 
     environment {
-        GIT_REPO       = 'https://github.com/StarAgileDevOpsTraining/star-agile-banking-finance.git'
-        DOCKERHUB_CRED = 'dockerhub-credentials'
-        DOCKERHUB_USER = 'silvy08'
-        IMAGE_NAME     = 'finance-me-app'
+        IMAGE_NAME = "silvy08/banking-app:latest"
+        APP_SERVER_IP = "172.31.3.32"
+        REMOTE_USER = "ubuntu"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Clone Repository') {
             steps {
-                git url: "${GIT_REPO}", branch: 'main'
+                git 'https://github.com/Silver-08/star-agile-banking-finance.git'
             }
         }
 
         stage('Build with Maven') {
             steps {
-                sh './mvnw clean package -DskipTests'
+                sh 'mvn clean package'
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    dockerImage = docker.build("${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}")
-                }
-            }
-        }
-
-        stage('Push to Docker Hub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh 'echo $PASS | docker login -u $USER --password-stdin'
-                    sh "docker push ${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
-                }
-            }
-        }
-
-        stage('Provision Infra with Terraform') {
-            steps {
-                dir('terraform') {
-                    sh 'terraform init'
-                    sh 'terraform apply -auto-approve'
-                }
-            }
-        }
-
-        stage('Configure Servers with Ansible') {
-            steps {
-                ansiblePlaybook credentialsId: 'aws-ssh-key', inventory: 'ansible/inventory', playbook: 'ansible/playbook.yml'
-            }
-        }
-
-        stage('Deploy App') {
+        stage('Build and Push Docker Image') {
             steps {
                 sh """
-                  ssh -i ~/.ssh/your-key.pem ec2-user@${env.TEST_SERVER_IP} \\
-                    "docker pull ${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER} && \\
-                     docker rm -f finance-me || true && \\
-                     docker run -d --name finance-me -p 8080:8080 ${DOCKERHUB_USER}/${IMAGE_NAME}:${env.BUILD_NUMBER}"
+                docker build -t $IMAGE_NAME .
+                echo "$DOCKERHUB_PASS" | docker login -u "$DOCKERHUB_USER" --password-stdin
+                docker push $IMAGE_NAME
                 """
             }
         }
-    }
 
-    post {
-        always { cleanWs() }
+        stage('Deploy to App Server') {
+            steps {
+                sshagent (credentials: ['your-ssh-key-id']) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no $REMOTE_USER@$APP_SERVER_IP <<EOF
+                      docker pull $IMAGE_NAME
+                      docker stop banking-app || true
+                      docker rm banking-app || true
+                      docker run -d --name banking-app -p 8080:8080 $IMAGE_NAME
+                    EOF
+                    """
+                }
+            }
+        }
+
+        stage('Test Deployment') {
+            steps {
+                sh 'curl -s http://18.144.171.191:8080 || echo "App not reachable"'
+            }
+        }
     }
 }

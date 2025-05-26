@@ -1,14 +1,19 @@
 global:
   scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files:
 
 scrape_configs:
-  - job_name: 'node'
+  - job_name: "prometheus"
     static_configs:
-      - targets:
-          - '<ci_server_ip>:9100'
-          - '<monitoring_server_ip>:9100'
+      - targets: ["localhost:9090"]
 
-  - job_name: 'docker'
+  - job_name: "node-exporters"
     static_configs:
-      - targets:
-          - '<ci_server_ip>:9323'
+      - targets: ["172.31.3.32:9100", "172.31.7.48:9100"]
